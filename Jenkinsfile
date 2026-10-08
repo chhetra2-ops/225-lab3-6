@@ -1,5 +1,6 @@
+```groovy
 pipeline {
-    agent any 
+    agent any
 
     environment {
         DOCKER_CREDENTIALS_ID = 'roseaw-dockerhub'
@@ -12,8 +13,11 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']],
-                          userRemoteConfigs: [[url: "${GITHUB_URL}"]]])
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: "${GITHUB_URL}"]]
+                ])
             }
         }
 
@@ -27,8 +31,14 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.withRegistry('https://registry-1.docker.io', 'roseaw-dockerhub') {
-                        docker.build("${DOCKER_IMAGE}:${IMAGE_TAG}", "-f Dockerfile.build .")
+                    docker.withRegistry(
+                        'https://registry-1.docker.io',
+                        "${DOCKER_CREDENTIALS_ID}"
+                    ) {
+                        docker.build(
+                            "${DOCKER_IMAGE}:${IMAGE_TAG}",
+                            "-f Dockerfile.build ."
+                        )
                     }
                 }
             }
@@ -37,7 +47,10 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS_ID}") {
+                    docker.withRegistry(
+                        'https://index.docker.io/v1/',
+                        "${DOCKER_CREDENTIALS_ID}"
+                    ) {
                         docker.image("${DOCKER_IMAGE}:${IMAGE_TAG}").push()
                     }
                 }
@@ -46,57 +59,71 @@ pipeline {
 
         stage('Deploy to Dev Environment') {
             steps {
-                script {
-                    def kubeConfig = readFile(KUBECONFIG)
-                    sh "sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml"
-                    sh "kubectl apply -f deployment-dev.yaml"
-                }
+                sh """
+                    sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml
+                    kubectl apply -f deployment-dev.yaml
+                    kubectl rollout status deployment/dev-deployment --timeout=120s
+                """
             }
         }
 
-        stage("Run Acceptance Tests") {
+        stage('Inspect Dev Routing') {
+            steps {
+                sh 'kubectl get ingress nginx -o yaml'
+                sh 'kubectl get service dev-service -o wide'
+                sh 'kubectl get endpoints dev-service -o wide'
+            }
+        }
+
+        stage('Run Acceptance Tests') {
             steps {
                 script {
-                    sh 'docker stop qa-tests || true'
-                    sh 'docker rm qa-tests || true'
+                    sh 'docker rm -f qa-tests || true'
                     sh 'docker build -t qa-tests -f Dockerfile.test .'
-                    sh 'docker run qa-tests'
-                    sh 'docker stop qa-tests || true'
-                    sh 'docker rm qa-tests || true'
+                    sh 'docker run --rm qa-tests'
                 }
             }
         }
 
         stage('Deploy to Prod Environment') {
             steps {
-                script {
-                    sh "sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-prod.yaml"
-                    sh "cd .."
-                    sh "kubectl apply -f deployment-prod.yaml"
-                }
+                sh """
+                    sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-prod.yaml
+                    kubectl apply -f deployment-prod.yaml
+                    kubectl rollout status deployment/prod-deployment --timeout=120s
+                """
             }
         }
 
         stage('Check Kubernetes Cluster') {
             steps {
-                script {
-                    sh "kubectl get all"
-                }
+                sh 'kubectl get all'
+                sh 'kubectl get ingress'
             }
         }
     }
 
     post {
         success {
-            slackSend color: "good", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            slackSend(
+                color: 'good',
+                message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            )
         }
 
         unstable {
-            slackSend color: "warning", message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            slackSend(
+                color: 'warning',
+                message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            )
         }
 
         failure {
-            slackSend color: "danger", message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            slackSend(
+                color: 'danger',
+                message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            )
         }
     }
 }
+```
