@@ -31,7 +31,7 @@ stages {
     stage('Build Docker Image') {
         steps {
             script {
-                docker.withRegistry('https://registry-1.docker.io', "${DOCKER_CREDENTIALS_ID}") {
+                docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS_ID}") {
                     docker.build("${DOCKER_IMAGE}:${IMAGE_TAG}", "-f Dockerfile.build .")
                 }
             }
@@ -50,17 +50,17 @@ stages {
 
     stage('Deploy to Dev Environment') {
         steps {
-            sh """
-                sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml
-                kubectl apply -f deployment-dev.yaml
-                kubectl rollout status deployment/dev-deployment --timeout=120s
-            """
+            sh '''
+                sed -i "s|cithit/chhetra2:latest|cithit/chhetra2:${BUILD_NUMBER_TAG}|" deployment-dev.yaml
+            '''
+            sh 'kubectl apply -f deployment-dev.yaml'
+            sh 'kubectl rollout status deployment/dev-deployment --timeout=120s'
         }
     }
 
     stage('Inspect Dev Routing') {
         steps {
-            sh 'kubectl get ingress nginx -o yaml'
+            sh 'kubectl get ingress -o wide'
             sh 'kubectl get service dev-service -o wide'
             sh 'kubectl get endpoints dev-service -o wide'
         }
@@ -68,41 +68,45 @@ stages {
 
     stage('Run Acceptance Tests') {
         steps {
-            script {
-                sh 'docker rm -f qa-tests || true'
-                sh 'docker build -t qa-tests -f Dockerfile.test .'
-                sh 'docker run --rm qa-tests'
-            }
+            sh 'docker rm -f qa-tests || true'
+            sh 'docker build -t qa-tests -f Dockerfile.test .'
+            sh 'docker run --rm qa-tests'
         }
     }
 
     stage('Deploy to Prod Environment') {
         steps {
-            sh """
-                sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-prod.yaml
-                kubectl apply -f deployment-prod.yaml
-                kubectl rollout status deployment/prod-deployment --timeout=120s
-            """
+            sh 'kubectl apply -f deployment-prod.yaml'
+            sh 'kubectl rollout status deployment/prod-deployment --timeout=120s'
         }
     }
 
     stage('Check Kubernetes Cluster') {
         steps {
             sh 'kubectl get all'
-            sh 'kubectl get ingress'
+            sh 'kubectl get ingress -o wide'
         }
     }
 }
 
 post {
     success {
-        slackSend(color: 'good', message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+        slackSend(
+            color: 'good',
+            message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        )
     }
     unstable {
-        slackSend(color: 'warning', message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+        slackSend(
+            color: 'warning',
+            message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        )
     }
     failure {
-        slackSend(color: 'danger', message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+        slackSend(
+            color: 'danger',
+            message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        )
     }
 }
 ```
