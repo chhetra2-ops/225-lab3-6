@@ -51,7 +51,9 @@ pipeline {
                         'https://index.docker.io/v1/',
                         "${DOCKER_CREDENTIALS_ID}"
                     ) {
-                        docker.image("${DOCKER_IMAGE}:${IMAGE_TAG}").push()
+                        docker.image(
+                            "${DOCKER_IMAGE}:${IMAGE_TAG}"
+                        ).push()
                     }
                 }
             }
