@@ -1,7 +1,5 @@
 pipeline {
 agent any
-
-```
 environment {
     DOCKER_CREDENTIALS_ID = 'roseaw-dockerhub'
     DOCKER_IMAGE = 'cithit/chhetra2'
@@ -50,11 +48,11 @@ stages {
 
     stage('Deploy to Dev Environment') {
         steps {
-            sh '''
-                sed -i "s|cithit/chhetra2:latest|cithit/chhetra2:${BUILD_NUMBER_TAG}|" deployment-dev.yaml
-            '''
-            sh 'kubectl apply -f deployment-dev.yaml'
-            sh 'kubectl rollout status deployment/dev-deployment --timeout=120s'
+            sh """
+                sed -i 's|cithit/chhetra2:latest|cithit/chhetra2:${IMAGE_TAG}|' deployment-dev.yaml
+                kubectl apply -f deployment-dev.yaml
+                kubectl rollout status deployment/dev-deployment --timeout=120s
+            """
         }
     }
 
@@ -76,8 +74,11 @@ stages {
 
     stage('Deploy to Prod Environment') {
         steps {
-            sh 'kubectl apply -f deployment-prod.yaml'
-            sh 'kubectl rollout status deployment/prod-deployment --timeout=120s'
+            sh """
+                sed -i 's|cithit/chhetra2:latest|cithit/chhetra2:${IMAGE_TAG}|' deployment-prod.yaml
+                kubectl apply -f deployment-prod.yaml
+                kubectl rollout status deployment/prod-deployment --timeout=120s
+            """
         }
     }
 
@@ -96,19 +97,20 @@ post {
             message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         )
     }
+
     unstable {
         slackSend(
             color: 'warning',
             message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         )
     }
-    failure {
+
+failure {
         slackSend(
             color: 'danger',
             message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         )
     }
 }
-```
 
 }
